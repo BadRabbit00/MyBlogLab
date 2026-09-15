@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import html
 import logging
 from pathlib import Path
+import re
 from typing import Optional
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -47,6 +48,8 @@ router = Router()
 class PostReviewStates(StatesGroup):
     waiting_for_reject_comment = State()
     waiting_for_header_photo = State()
+    waiting_for_post_number_for_docs = State()
+    waiting_for_doc_file = State()
 
 
 def make_review_keyboard(post_id: str) -> InlineKeyboardMarkup:
@@ -121,7 +124,10 @@ def render_main_menu() -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(text="⚡ Генерация", callback_data="menu:generate"),
             ],
             [
+                InlineKeyboardButton(text="📄 Добавить информацию", callback_data="menu:add_doc"),
                 InlineKeyboardButton(text="📥 Очередь ревью", callback_data="menu:review"),
+            ],
+            [
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="menu:refresh"),
             ],
         ]
@@ -283,6 +289,165 @@ async def callback_menu_review_handler(callback: CallbackQuery) -> None:
             f"{html.escape(content)}"
         )
         await callback.message.answer(msg, reply_markup=make_review_keyboard(post.id), parse_mode=ParseMode.HTML)
+
+
+def find_post_by_tag_or_number(query: str) -> Optional[plan.Post]:
+    """Resolve post by exact id, doc tag (POST1), or 1-based index."""
+    cleaned = query.strip()
+    content_plan = plan.load()
+
+    # 1. Exact ID match (w1-01)
+    for p in content_plan.posts:
+        if p.id.lower() == cleaned.lower():
+            return p
+
+    # 2. Tag match (POST1, post1)
+    target_tag = cleaned.upper() if cleaned.upper().startswith("POST") else f"POST{cleaned}"
+    for p in content_plan.posts:
+        if p.doc_prefix and p.doc_prefix.upper() == target_tag:
+            return p
+
+    # 3. Numeric index (1..54)
+    if cleaned.isdigit():
+        num = int(cleaned)
+        tag = f"POST{num}"
+        for p in content_plan.posts:
+            if p.doc_prefix and p.doc_prefix.upper() == tag:
+                return p
+        if 1 <= num <= len(content_plan.posts):
+            return content_plan.posts[num - 1]
+
+    return None
+
+
+@router.callback_query(F.data == "menu:add_doc")
+async def callback_menu_add_doc_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    """Prompt user for post number/tag to attach docs."""
+    await state.set_state(PostReviewStates.waiting_for_post_number_for_docs)
+    await callback.answer()
+    text = (
+        "📄 <b>Добавление материалов в базу знаний</b>\n\n"
+        "Введи номер или тег поста, к которому нужно привязать статью/заметки.\n"
+        "Например: <code>1</code>, <code>POST1</code> или <code>w1-01</code>:\n\n"
+        "<i>(К уже сгенерированным постам добавлять файлы нельзя)</i>"
+    )
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:main")]]
+    )
+    await callback.message.answer(text, reply_markup=cancel_kb, parse_mode=ParseMode.HTML)
+
+
+@router.message(PostReviewStates.waiting_for_post_number_for_docs, F.text)
+async def process_add_doc_post_number(message: Message, state: FSMContext) -> None:
+    """Validate post status and prepare to accept markdown article."""
+    query = (message.text or "").strip()
+    post = find_post_by_tag_or_number(query)
+
+    if not post:
+        await message.answer(
+            f"❌ Пост по запросу <code>{html.escape(query)}</code> не найден в плане.\n"
+            "Попробуй еще раз (например, <code>1</code>, <code>POST1</code> или <code>w1-01</code>):",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # Critical check: if post is already generated, reject!
+    if post.status != "pending":
+        await message.answer(
+            f"❌ <b>Ошибка:</b> пост <b>#{post.id.upper()}</b> уже обработан!\n"
+            f"Текущий статус: <code>{post.status}</code>.\n\n"
+            "Добавлять материалы можно только к постам, ожидающим генерации (<code>pending</code>).",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="🔙 В главное меню", callback_data="menu:main")]]
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        await state.clear()
+        return
+
+    tag = post.doc_prefix or f"POST{post.id}"
+    await state.set_state(PostReviewStates.waiting_for_doc_file)
+    await state.update_data(post_id=post.id, doc_prefix=tag)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:main")]]
+    )
+    await message.answer(
+        f"📌 <b>Выбран пост: #{post.id.upper()}</b>\n"
+        f"<b>Тема:</b> {html.escape(post.title)}\n"
+        f"<b>Тег:</b> <code>{tag}</code>\n\n"
+        "Теперь <b>отправь .md файл</b> (как документ) или пришли текст статьи/заметок сообщением.\n"
+        f"Файл будет сохранён в <code>./docs/</code> с тегом <code>{tag}</code> и использован моделью при генерации.",
+        reply_markup=cancel_kb,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(PostReviewStates.waiting_for_doc_file, F.document)
+async def process_add_doc_file(message: Message, state: FSMContext, bot: Bot) -> None:
+    """Download user-uploaded markdown file into ./docs/."""
+    data = await state.get_data()
+    post_id = data.get("post_id", "")
+    doc_prefix = data.get("doc_prefix", "POST")
+    await state.clear()
+
+    doc = message.document
+    if not doc:
+        await message.answer("❌ Документ не обнаружен.")
+        return
+
+    orig_name = doc.file_name or "material.md"
+    safe_name = re.sub(r"[^\w\.-]", "_", orig_name)
+    if not safe_name.endswith(".md"):
+        safe_name += ".md"
+
+    dest_filename = f"{doc_prefix}-{safe_name}"
+    target_path = BASE_DIR / "docs" / dest_filename
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    await bot.download(doc.file_id, destination=target_path)
+
+    await message.answer(
+        f"✅ <b>Файл успешно сохранён в базу знаний!</b>\n"
+        f"📁 Путь: <code>docs/{dest_filename}</code>\n"
+        f"🏷 Тег: <code>{doc_prefix}</code> (пост #{post_id.upper()})\n\n"
+        "Материал будет автоматически прочитан моделью при генерации поста.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=f"⚡ Сгенерировать #{post_id.upper()}", callback_data=f"gen_req:{post_id}")],
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")],
+            ]
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.message(PostReviewStates.waiting_for_doc_file, F.text)
+async def process_add_doc_text(message: Message, state: FSMContext) -> None:
+    """Save user text as a markdown article in ./docs/."""
+    data = await state.get_data()
+    post_id = data.get("post_id", "")
+    doc_prefix = data.get("doc_prefix", "POST")
+    await state.clear()
+
+    dest_filename = f"{doc_prefix}-notes.md"
+    target_path = BASE_DIR / "docs" / dest_filename
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(message.text or "", encoding="utf-8")
+
+    await message.answer(
+        f"✅ <b>Заметки сохранены в базу знаний!</b>\n"
+        f"📁 Путь: <code>docs/{dest_filename}</code>\n"
+        f"🏷 Тег: <code>{doc_prefix}</code> (пост #{post_id.upper()})\n\n"
+        "Материал будет автоматически прочитан моделью при генерации поста.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=f"⚡ Сгенерировать #{post_id.upper()}", callback_data=f"gen_req:{post_id}")],
+                [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")],
+            ]
+        ),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("list"))
