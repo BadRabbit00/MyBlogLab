@@ -20,12 +20,21 @@
         pytest-asyncio
       ]);
 
+      appCode = builtins.path {
+        path = ./src;
+        name = "blog-agent-src";
+        filter = path: type:
+          (type == "directory" && builtins.baseNameOf path != "__pycache__")
+          || (type == "regular" && pkgs.lib.hasSuffix ".py" path);
+      };
+
       appSource = pkgs.runCommand "blog-agent-app" { } ''
         mkdir -p $out/app
-        cp -r ${./src} $out/app/src
+        cp -r ${appCode} $out/app/src
         cp -r ${./prompts} $out/app/prompts
         cp -r ${./templates} $out/app/templates
         cp -r ${./docs} $out/app/docs
+        cp -r ${./examples} $out/app/examples
         cp ${./SYSTEM.MD} $out/app/SYSTEM.MD
         cp ${./persona.md} $out/app/persona.md
         cp ${./content-plan.yaml} $out/app/content-plan.yaml
@@ -46,9 +55,15 @@
         ];
         config = {
           WorkingDir = "/app";
-          Cmd = [ "python3" "src/bot.py" ];
+          User = "10001:10001";
+          Entrypoint = [ "${pythonEnv}/bin/python3" "-m" "src.container" ];
+          Cmd = [ "python3" "-m" "src.bot" ];
           Env = [
             "PYTHONPATH=/app"
+            "BLOG_DATA_DIR=/data"
+            "HOME=/data"
+            "PYTHONUNBUFFERED=1"
+            "FONTCONFIG_FILE=${pkgs.makeFontsConf { fontDirectories = [ pkgs.liberation_ttf ]; }}"
             "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             "PATH=${pythonEnv}/bin:${pkgs.resvg}/bin:${pkgs.coreutils}/bin:${pkgs.bashInteractive}/bin"
           ];
@@ -70,11 +85,15 @@
 
         shellHook = ''
           export PYTHONPATH="$PWD:$PYTHONPATH"
-          export MODEL_PATH="/home/BadRabbit/.eva/models/gemma-4-12b-it-uncensored-GGUF/gemma-4-12b-it-uncensored-Q4_K_M.gguf"
           alias blog="python3 $PWD/src/cli.py"
           alias bot="python3 $PWD/src/bot.py"
 
           start_llama() {
+            if [ -z "''${MODEL_PATH:-}" ]; then
+              echo "Set MODEL_PATH to your Gemma GGUF file before calling start_llama."
+              return 1
+            fi
+            mkdir -p logs
             if curl -s http://127.0.0.1:8080/health > /dev/null 2>&1 || curl -s http://127.0.0.1:8080/v1/models > /dev/null 2>&1; then
               echo "[+] llama-server already running on http://127.0.0.1:8080"
             else

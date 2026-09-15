@@ -14,10 +14,11 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 from src.logger import get_logger
+from src.paths import DATA_DIR
 
 logger = get_logger("plan")
 
-PLAN_PATH: Path = Path(__file__).resolve().parent.parent / "content-plan.yaml"
+PLAN_PATH: Path = DATA_DIR / "content-plan.yaml"
 
 
 @dataclass

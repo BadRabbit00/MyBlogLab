@@ -1,26 +1,26 @@
 """Telegram publishing module for blog-agent (Step 4: queued -> published).
 
-Sends post card and caption using Telegram Bot API sendPhoto with strict token isolation,
-file permission checks (0600), and HTML entity sanitization.
+Sends a post card and validated plain-text caption using Telegram Bot API sendPhoto
+with token isolation and file permission checks (0600).
 """
 
 from datetime import datetime, timezone
-import html
 import os
 from pathlib import Path
-import re
 import stat
 from typing import Optional
 
 import httpx
 
 from src.image import generate_card
-from src.logger import get_logger
+from src.logger import get_logger, redact_secrets
+from src.paths import DATA_DIR
+from src.validation import require_plain_text
 import src.plan as plan
 
 logger = get_logger("publish")
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+BASE_DIR: Path = DATA_DIR
 ENV_FILE: Path = BASE_DIR / ".env"
 TOKEN_PATHS: list[Path] = [
     Path.home() / ".config" / "blog-agent" / "bot_token",
@@ -52,14 +52,21 @@ def _read_token_from_env_file(env_path: Path) -> Optional[str]:
 def get_bot_token() -> str:
     """Read Telegram bot token with priority:
     1. Environment variables TELEGRAM_BOT_TOKEN / BOT_TOKEN
-    2. Local .env file
-    3. Dedicated token files (~/.config/blog-agent/bot_token, .tg_bot_token) with 0600 permissions
+    2. TELEGRAM_BOT_TOKEN_FILE (e.g. a read-only Docker secret)
+    3. Local .env file and legacy dedicated token files
     """
     # 1. Check process environment (standard for Docker runtime --env-file .env)
     env_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
     if env_token and env_token.strip():
         logger.debug("Bot token loaded from environment variables")
         return env_token.strip()
+
+    secret_file = os.getenv("TELEGRAM_BOT_TOKEN_FILE")
+    if secret_file:
+        token = Path(secret_file).read_text(encoding="utf-8").strip()
+        if not token:
+            raise ValueError("TELEGRAM_BOT_TOKEN_FILE is empty")
+        return token
 
     # 2. Check local .env file
     file_env_token = _read_token_from_env_file(ENV_FILE)
@@ -95,48 +102,6 @@ def get_bot_token() -> str:
     return token
 
 
-def markdown_to_telegram_html(text: str) -> str:
-    """Convert basic markdown in draft (code, bold, italic) to valid Telegram HTML.
-
-    Properly escapes raw HTML entities &, <, > while preserving tags.
-    """
-    # 1. Protect code blocks and inline code
-    code_blocks: list[str] = []
-    inline_codes: list[str] = []
-
-    def save_code_block(m: re.Match[str]) -> str:
-        code = m.group(1)
-        escaped = html.escape(code)
-        code_blocks.append(f"<pre><code>{escaped}</code></pre>")
-        return f"__CODE_BLOCK_{len(code_blocks)-1}__"
-
-    def save_inline_code(m: re.Match[str]) -> str:
-        code = m.group(1)
-        escaped = html.escape(code)
-        inline_codes.append(f"<code>{escaped}</code>")
-        return f"__INLINE_CODE_{len(inline_codes)-1}__"
-
-    processed = re.sub(r"```(?:\w+)?\n?(.*?)\n?```", save_code_block, text, flags=re.DOTALL)
-    processed = re.sub(r"`([^`\n]+)`", save_inline_code, processed)
-
-    # 2. Escape raw HTML entities in regular text
-    processed = html.escape(processed)
-
-    # 3. Convert bold (**text** or __text__)
-    processed = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", processed)
-
-    # 4. Convert italic (*text*)
-    processed = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<i>\1</i>", processed)
-
-    # 5. Restore code tokens
-    for idx, snippet in enumerate(code_blocks):
-        processed = processed.replace(f"__CODE_BLOCK_{idx}__", snippet)
-    for idx, snippet in enumerate(inline_codes):
-        processed = processed.replace(f"__INLINE_CODE_{idx}__", snippet)
-
-    return processed.strip()
-
-
 def run_publish(post_id: Optional[str] = None, dry_run: bool = False) -> bool:
     """Publish queued post to Telegram channel.
 
@@ -152,17 +117,17 @@ def run_publish(post_id: Optional[str] = None, dry_run: bool = False) -> bool:
 
     with open(draft_path, "r", encoding="utf-8") as f:
         raw_draft = f.read().strip()
+    require_plain_text(raw_draft)
 
     # Image preparation
     image_path = BASE_DIR / "out" / "images" / f"{post.id}.png"
     if not image_path.exists():
         image_path = generate_card(post.id)
 
-    # Prepare HTML caption
-    caption_html = markdown_to_telegram_html(raw_draft)
-    if len(caption_html) > 1024:
+    # Send the validated body literally, with no markup parser enabled.
+    if len(raw_draft) > 1024:
         raise ValueError(
-            f"Telegram caption limit exceeded: {len(caption_html)} chars (max 1024 allowed for photo captions)."
+            f"Telegram caption limit exceeded: {len(raw_draft)} chars (max 1024 allowed for photo captions)."
         )
 
     # Channel configuration
@@ -173,8 +138,8 @@ def run_publish(post_id: Optional[str] = None, dry_run: bool = False) -> bool:
         print(f"[DRY-RUN] Post: {post.id} ({post.title})")
         print(f"[DRY-RUN] Target Channel: {channel_id}")
         print(f"[DRY-RUN] Image: {image_path} ({image_path.stat().st_size} bytes)")
-        print(f"[DRY-RUN] Caption Length: {len(caption_html)} chars")
-        print("[DRY-RUN] Caption Preview:\n" + caption_html)
+        print(f"[DRY-RUN] Caption Length: {len(raw_draft)} chars")
+        print("[DRY-RUN] Caption Preview:\n" + raw_draft)
         return True
 
     # Real publication
@@ -185,14 +150,16 @@ def run_publish(post_id: Optional[str] = None, dry_run: bool = False) -> bool:
         files = {"photo": (image_path.name, img_file, "image/png")}
         data = {
             "chat_id": channel_id,
-            "caption": caption_html,
-            "parse_mode": "HTML",
+            "caption": raw_draft,
         }
 
-        with httpx.Client(timeout=30.0) as client:
-            response = client.post(api_url, data=data, files=files)
-            response.raise_for_status()
-            res_json = response.json()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(api_url, data=data, files=files)
+                response.raise_for_status()
+                res_json = response.json()
+        except httpx.HTTPError as exc:
+            raise RuntimeError(redact_secrets(str(exc))) from None
 
     if not res_json.get("ok"):
         raise RuntimeError(f"Telegram API returned error: {res_json}")

@@ -12,6 +12,7 @@ from src.llm import (
     log_interaction,
     LLMResponse,
 )
+from src.validation import ResponseValidationError
 
 
 def test_format_gemma4_prompt_without_thinking():
@@ -60,10 +61,10 @@ def test_sanitize_response_cutoff_inside_thought():
         sanitize_response(raw)
 
 
-def test_sanitize_response_strips_markdown_fences():
+def test_sanitize_response_preserves_markdown_for_validation():
     raw = "```markdown\nТекст внутри блоков кода\n```"
     cleaned = sanitize_response(raw)
-    assert cleaned == "Текст внутри блоков кода"
+    assert cleaned == raw
 
 
 def test_sanitize_response_strips_conversational_prefixes():
@@ -122,3 +123,70 @@ def test_generate_success(mock_client_class, tmp_path: Path):
 
     assert res.cleaned_content == "Готовый пост."
     assert res.tokens_predicted == 42
+
+
+@pytest.mark.parametrize("invalid", [
+    "Китайский текст 中文", "**Нельзя выделять**", "{{ name }}", "<s>Текст</s>",
+    "```markdown\nОтвет\n```", "", None, 123, {"text": "Ответ"}, ["Ответ"], "\ud800",
+])
+@patch("src.llm.httpx.Client")
+def test_generate_retries_validation_with_feedback(mock_client_class, invalid, tmp_path):
+    client = mock_client_class.return_value.__enter__.return_value
+    client.post.return_value.json.side_effect = [
+        {"content": invalid}, {"content": "Чистый текст поста."},
+    ]
+    with patch("src.llm.LOGS_DIR", tmp_path), patch("src.llm.time.sleep") as sleep:
+        response = generate("test", "draft", "System", "User", max_retries=2)
+
+    assert response.cleaned_content == "Чистый текст поста."
+    assert client.post.call_count == 2
+    first_prompt = client.post.call_args_list[0].kwargs["json"]["prompt"]
+    second_prompt = client.post.call_args_list[1].kwargs["json"]["prompt"]
+    assert "Предыдущий ответ отклонён" not in first_prompt
+    assert "Предыдущий ответ отклонён" in second_prompt
+    sleep.assert_not_called()
+    records = [json.loads(line) for line in (tmp_path / "test.jsonl").read_text().splitlines()]
+    assert len(records) == 2
+    assert records[0]["raw_response"]["content"] == invalid
+    assert records[0]["validation_errors"]
+    assert not records[1]["validation_errors"]
+    assert records[0]["prompt"] != records[1]["prompt"]
+
+
+@patch("src.llm.httpx.Client")
+def test_generate_never_returns_invalid_content_after_retry_limit(mock_client_class, tmp_path):
+    client = mock_client_class.return_value.__enter__.return_value
+    client.post.return_value.json.return_value = {"content": "<post>Текст</post>"}
+    with patch("src.llm.LOGS_DIR", tmp_path):
+        with pytest.raises(ResponseValidationError, match="HTML/XML"):
+            generate("test", "draft", "System", "User", max_retries=2)
+    assert client.post.call_count == 2
+
+
+@patch("src.llm.httpx.Client")
+def test_generate_validates_final_answer_after_thoughts(mock_client_class, tmp_path):
+    raw = "<|channel>thought\n中文 **analysis** <xml/>\n<channel|>\nЧистый текст.<turn|><eos>"
+    client = mock_client_class.return_value.__enter__.return_value
+    client.post.return_value.json.return_value = {"content": raw}
+    with patch("src.llm.LOGS_DIR", tmp_path):
+        result = generate("test", "critique", "System", "User", max_retries=1)
+    assert result.cleaned_content == "Чистый текст."
+
+
+@patch("src.llm.httpx.Client")
+def test_late_channel_token_cannot_hide_an_invalid_answer(mock_client_class, tmp_path):
+    client = mock_client_class.return_value.__enter__.return_value
+    client.post.return_value.json.return_value = {"content": "中文<channel|>Чистый текст."}
+    with patch("src.llm.LOGS_DIR", tmp_path):
+        with pytest.raises(ResponseValidationError):
+            generate("test", "draft", "System", "User", max_retries=1)
+
+
+@patch("src.llm.httpx.Client")
+def test_endpoint_can_be_set_for_container_network(mock_client_class, tmp_path, monkeypatch):
+    monkeypatch.setenv("LLM_ENDPOINT", "http://llm:8080/completion")
+    client = mock_client_class.return_value.__enter__.return_value
+    client.post.return_value.json.return_value = {"content": "Готовый текст."}
+    with patch("src.llm.LOGS_DIR", tmp_path):
+        generate("test", "draft", "System", "User", max_retries=1)
+    assert client.post.call_args.args[0] == "http://llm:8080/completion"

@@ -1,0 +1,23 @@
+* text=auto eol=lf
+
+*.py text diff=python
+*.md text
+*.yaml text
+*.yml text
+*.json text
+*.nix text
+*.lock text
+*.svg text
+*.sh text eol=lf
+.env-example text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.gz binary
+*.zip binary
+*.gguf binary

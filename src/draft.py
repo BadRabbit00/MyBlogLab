@@ -11,10 +11,12 @@ from src.lint import RUBRIC_LIMITS, lint_post
 from src.llm import generate
 import src.plan as plan
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
-SYSTEM_PROMPT_PATH: Path = BASE_DIR / "SYSTEM.MD"
-DRAFT_TEMPLATE_PATH: Path = BASE_DIR / "prompts" / "draft.md"
-STYLE_PATH: Path = BASE_DIR / "prompts" / "style.md"
+from src.paths import APP_DIR, DATA_DIR
+
+BASE_DIR: Path = DATA_DIR
+SYSTEM_PROMPT_PATH: Path = APP_DIR / "SYSTEM.MD"
+DRAFT_TEMPLATE_PATH: Path = APP_DIR / "prompts" / "draft.md"
+STYLE_PATH: Path = APP_DIR / "prompts" / "style.md"
 OUT_DRAFTS_DIR: Path = BASE_DIR / "out" / "drafts"
 
 

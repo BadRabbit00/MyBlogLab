@@ -31,12 +31,16 @@ from aiogram.types import (
 )
 
 from src.generate import generate_post_content
+from src.auth import OwnerOnlyMiddleware, allowed_user_ids
 from src.image import generate_card
-from src.logger import get_logger
+from src.lint import LintResult
+from src.paths import DATA_DIR
+from src.logger import get_logger, redact_secrets
 import src.plan as plan
-from src.publish import get_bot_token, markdown_to_telegram_html
+from src.publish import get_bot_token
+from src.validation import ResponseValidationError, validate_plain_text
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+BASE_DIR: Path = DATA_DIR
 OUT_DRAFTS_DIR: Path = BASE_DIR / "out" / "drafts"
 OUT_IMAGES_DIR: Path = BASE_DIR / "out" / "images"
 
@@ -50,6 +54,30 @@ class PostReviewStates(StatesGroup):
     waiting_for_header_photo = State()
     waiting_for_post_number_for_docs = State()
     waiting_for_doc_file = State()
+
+
+async def _generate_for_review(
+    message: Message,
+    status_msg: Message,
+    post: plan.Post,
+    user_feedback: Optional[str] = None,
+    previous_draft: Optional[str] = None,
+) -> Optional[tuple[str, LintResult]]:
+    """Report exhausted validation retries without offering an invalid draft for approval."""
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(
+            None, generate_post_content, post, user_feedback, previous_draft, 2
+        )
+    except ResponseValidationError as exc:
+        await status_msg.delete()
+        await message.answer(
+            "❌ Не удалось получить текст, прошедший проверку:\n"
+            + "\n".join(exc.errors)
+            + f"\n\nПовтори генерацию командой /generate {post.id}.",
+            parse_mode=None,
+        )
+        return None
 
 
 def make_review_keyboard(post_id: str) -> InlineKeyboardMarkup:
@@ -239,10 +267,10 @@ async def callback_menu_generate_handler(callback: CallbackQuery, state: FSMCont
         parse_mode=ParseMode.HTML,
     )
 
-    loop = asyncio.get_running_loop()
-    draft_text, lint_res = await loop.run_in_executor(
-        None, generate_post_content, post, None, None, 2
-    )
+    result = await _generate_for_review(callback.message, status_msg, post)
+    if result is None:
+        return
+    draft_text, lint_res = result
 
     badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
 
@@ -489,10 +517,10 @@ async def callback_gen_req_handler(callback: CallbackQuery, state: FSMContext) -
         parse_mode=ParseMode.HTML,
     )
 
-    loop = asyncio.get_running_loop()
-    draft_text, lint_res = await loop.run_in_executor(
-        None, generate_post_content, post, None, None, 2
-    )
+    result = await _generate_for_review(callback.message, status_msg, post)
+    if result is None:
+        return
+    draft_text, lint_res = result
 
     badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
 
@@ -571,11 +599,10 @@ async def cmd_generate_handler(message: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
     )
 
-    # Run LLM generation in worker thread to avoid blocking asyncio loop
-    loop = asyncio.get_running_loop()
-    draft_text, lint_res = await loop.run_in_executor(
-        None, generate_post_content, post, None, None, 2
-    )
+    result = await _generate_for_review(message, status_msg, post)
+    if result is None:
+        return
+    draft_text, lint_res = result
 
     badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
 
@@ -659,12 +686,11 @@ async def process_reject_comment(message: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
     )
 
-    loop = asyncio.get_running_loop()
-    new_text, lint_res = await loop.run_in_executor(
-        None, generate_post_content, post, user_comment, prev_draft, 2
-    )
-
+    result = await _generate_for_review(message, status_msg, post, user_comment, prev_draft)
     await state.clear()
+    if result is None:
+        return
+    new_text, lint_res = result
     await status_msg.delete()
 
     badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
@@ -689,6 +715,23 @@ async def process_reject_comment(message: Message, state: FSMContext) -> None:
 async def callback_approve_handler(callback: CallbackQuery, state: FSMContext) -> None:
     """Accept draft and wait for post header image."""
     post_id = callback.data.split(":", 1)[1]
+    post = plan.get_post(post_id)
+    if not post:
+        await callback.answer("❌ Пост не найден", show_alert=True)
+        return
+    draft_file = BASE_DIR / (post.draft_path or f"out/drafts/{post.id}.md")
+    if not draft_file.exists():
+        await callback.answer("❌ Файл черновика отсутствует", show_alert=True)
+        return
+    errors = validate_plain_text(draft_file.read_text(encoding="utf-8"))
+    if errors:
+        await callback.answer("❌ Черновик не прошёл проверку", show_alert=True)
+        await callback.message.answer(
+            "Одобрение заблокировано:\n" + "\n".join(errors)
+            + f"\n\nПерегенерируй пост: /generate {post_id}",
+            parse_mode=None,
+        )
+        return
     plan.advance(post_id, status="queued")
 
     await state.set_state(PostReviewStates.waiting_for_header_photo)
@@ -743,7 +786,7 @@ async def process_header_photo(message: Message, state: FSMContext, bot: Bot) ->
 async def _publish_to_channel(
     bot: Bot, user_message: Message, post_id: str, image_path: Path
 ) -> None:
-    """Internal helper to push photo and formatted caption to target channel."""
+    """Validate the saved body immediately before sending a plain-text caption."""
     post = plan.get_post(post_id)
     if not post:
         await user_message.answer(f"❌ Пост {post_id} не найден в плане.")
@@ -755,11 +798,18 @@ async def _publish_to_channel(
         return
 
     raw_text = draft_file.read_text(encoding="utf-8").strip()
-    caption_html = markdown_to_telegram_html(raw_text)
-
-    if len(caption_html) > 1024:
+    errors = validate_plain_text(raw_text)
+    if errors:
         await user_message.answer(
-            f"❌ Текст поста превышает лимит подписи Telegram: {len(caption_html)} знаков (максимум 1024)."
+            "❌ Публикация заблокирована:\n" + "\n".join(errors)
+            + f"\n\nПерегенерируй пост: /generate {post_id}",
+            parse_mode=None,
+        )
+        return
+
+    if len(raw_text) > 1024:
+        await user_message.answer(
+            f"❌ Текст поста превышает лимит подписи Telegram: {len(raw_text)} знаков (максимум 1024)."
         )
         return
 
@@ -771,8 +821,8 @@ async def _publish_to_channel(
         published_msg = await bot.send_photo(
             chat_id=channel,
             photo=photo_file,
-            caption=caption_html,
-            parse_mode=ParseMode.HTML,
+            caption=raw_text,
+            parse_mode=None,
         )
 
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -791,7 +841,7 @@ async def _publish_to_channel(
     except Exception as exc:
         logger.error(f"Error publishing to channel: {exc}", exc_info=True)
         await user_message.answer(
-            f"❌ Ошибка публикации в канал {channel}: <code>{html.escape(str(exc))}</code>\n"
+            f"❌ Ошибка публикации в канал {channel}: <code>{html.escape(redact_secrets(str(exc)))}</code>\n"
             f"<i>Убедись, что бот добавлен в канал администратором с правом публикации.</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -799,6 +849,9 @@ async def _publish_to_channel(
 
 async def run_bot() -> None:
     """Initialize and run the Telegram bot polling."""
+    access = OwnerOnlyMiddleware(allowed_user_ids())
+    router.message.outer_middleware(access)
+    router.callback_query.outer_middleware(access)
     token = get_bot_token()
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())

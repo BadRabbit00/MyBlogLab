@@ -1,0 +1,26 @@
+services:
+  bot:
+    image: blog-agent:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    secrets:
+      - telegram_bot_token
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token

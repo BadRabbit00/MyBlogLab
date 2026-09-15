@@ -17,6 +17,9 @@ out/drafts/*.md
 out/images/*.png
 out/images/*.jpg
 
+# Local Graphify index and visualization (regenerate with graphify update .)
+graphify-out/
+
 # OS & Editor
 .DS_Store
 .vscode/
@@ -30,4 +33,17 @@ result-*
 # Environment files
 .env
 .env.*
+!.env-example
 
+# Local persistent data, secrets, models and build artifacts
+data/
+secrets/
+models/
+*.gguf
+dist/
+*.tar
+*.tar.gz
+.pytest_cache/
+.coverage
+htmlcov/
+junit.xml

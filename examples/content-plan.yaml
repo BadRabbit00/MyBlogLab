@@ -1,0 +1,15 @@
+meta:
+  channel: "@CHANGE_ME"
+  total_posts: 1
+  style_ref: prompts/style.md
+
+posts:
+  - id: demo-01
+    date: "2026-09-21"
+    slot: morning
+    rubric: instrument
+    title: "Проверка изоляции процесса"
+    thesis: "Файл /proc/self/status показывает настройки изоляции текущего процесса."
+    keywords: [Linux, proc, seccomp]
+    image_hint: "карточка с командой"
+    status: pending

@@ -12,12 +12,13 @@ import tempfile
 from typing import Optional
 
 from src.logger import get_logger
+from src.paths import APP_DIR, DATA_DIR
 import src.plan as plan
 
 logger = get_logger("image")
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
-TEMPLATE_PATH: Path = BASE_DIR / "templates" / "card.svg"
+BASE_DIR: Path = DATA_DIR
+TEMPLATE_PATH: Path = APP_DIR / "templates" / "card.svg"
 OUT_IMAGES_DIR: Path = BASE_DIR / "out" / "images"
 
 RUBRIC_COLORS: dict[str, str] = {

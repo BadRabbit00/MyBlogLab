@@ -6,6 +6,7 @@ and structured per-post JSONL logging.
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -14,10 +15,12 @@ from typing import Optional
 import httpx
 
 from src.logger import get_logger
+from src.paths import DATA_DIR
+from src.validation import PLAIN_TEXT_INSTRUCTION, ResponseValidationError, validate_plain_text
 
 logger = get_logger("llm")
 
-LOGS_DIR: Path = Path(__file__).resolve().parent.parent / "logs"
+LOGS_DIR: Path = DATA_DIR / "logs"
 DEFAULT_ENDPOINT: str = "http://127.0.0.1:8080/completion"
 
 PRESETS: dict[str, dict[str, object]] = {
@@ -74,36 +77,21 @@ def format_gemma4_prompt(system_prompt: str, user_prompt: str, enable_thinking: 
 def sanitize_response(raw_text: str) -> str:
     """Strip Gemma 4 internal thought channel and artifact tokens.
 
-    Removes <|channel>thought ... <channel|>, control tokens, markdown fences,
-    and accidental conversational prefixes.
+    Removes a leading <|channel>thought ... <channel|>, trailing Gemma tokens,
+    and accidental conversational prefixes. Keep content markup for validation.
     """
     # 1. Thought channel extraction
-    if "<channel|>" in raw_text:
-        # Final answer is strictly after the thinking channel closes
-        cleaned = raw_text.split("<channel|>")[-1]
-    elif "<|channel>thought" in raw_text:
-        # Model exceeded token limit while inside thought channel
-        raise ValueError("Model was cut off inside thinking channel before outputting response")
-    else:
-        cleaned = raw_text
+    cleaned = raw_text.strip()
+    if cleaned.startswith("<|channel>thought"):
+        _, closing_token, cleaned = cleaned.partition("<channel|>")
+        if not closing_token:
+            raise ValueError("Model was cut off inside thinking channel before outputting response")
 
-    # 2. Strip any remaining channel tags
-    cleaned = re.sub(r"<\|channel>.*?<channel\|>", "", cleaned, flags=re.DOTALL)
+    # Only trailing protocol tokens are transport metadata. Tags inside the answer
+    # (including <s>, which is HTML strikethrough) must reach the validator.
+    cleaned = re.sub(r"(?:\s*(?:<turn\|>|<eos>))+\s*$", "", cleaned).strip()
 
-    # 3. Strip control tokens
-    cleaned = re.sub(r"<turn\|>", "", cleaned)
-    cleaned = re.sub(r"<\|turn>", "", cleaned)
-    cleaned = re.sub(r"<eos>", "", cleaned)
-    cleaned = re.sub(r"<\/?s>", "", cleaned)
-
-    cleaned = cleaned.strip()
-
-    # 4. Strip outer markdown fences if model wrapped entire post in ```markdown ... ```
-    fence_match = re.match(r"^```(?:markdown|md)?\s*\n(.*?)\n```$", cleaned, flags=re.DOTALL)
-    if fence_match:
-        cleaned = fence_match.group(1).strip()
-
-    # 5. Strip accidental conversational prefixes like "Вот черновик:" or "Вот пост:"
+    # Strip accidental conversational prefixes like "Вот черновик:" or "Вот пост:"
     prefix_patterns = [
         r"^(?:Вот (?:готовый )?(?:пост|черновик|текст|вариант)|Исправленный вариант):\s*\n*",
         r"^(?:Черновик|Текст поста):\s*\n*",
@@ -121,6 +109,7 @@ def log_interaction(
     response_data: dict[str, object],
     cleaned_output: str,
     duration_ms: float,
+    validation_errors: Optional[list[str]] = None,
 ) -> None:
     """Record LLM prompt, parameters, and response to logs/{post_id}.jsonl."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -134,9 +123,10 @@ def log_interaction(
         "prompt": prompt,
         "cleaned_output": cleaned_output,
         "raw_response": response_data,
+        "validation_errors": validation_errors or [],
     }
 
-    with open(log_file, "a", encoding="utf-8") as f:
+    with open(log_file, "a", encoding="utf-8", errors="backslashreplace") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -148,11 +138,13 @@ def generate(
     enable_thinking: bool = False,
     preset: str = "draft",
     custom_params: Optional[dict[str, object]] = None,
-    endpoint: str = DEFAULT_ENDPOINT,
+    endpoint: Optional[str] = None,
     max_retries: int = 3,
     timeout_sec: float = 120.0,
 ) -> LLMResponse:
     """Call llama-server completion API with exponential backoff and structured logging."""
+    endpoint = endpoint or os.getenv("LLM_ENDPOINT", DEFAULT_ENDPOINT)
+    system_prompt = f"{system_prompt.strip()}\n\n{PLAIN_TEXT_INSTRUCTION}"
     full_prompt: str = format_gemma4_prompt(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
@@ -178,16 +170,13 @@ def generate(
                 response = client.post(endpoint, json=payload)
                 response.raise_for_status()
                 data: dict[str, object] = response.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Completion API response must be a JSON object")
 
             duration_ms = round((time.monotonic() - start_time) * 1000, 2)
-            raw_text: str = str(data.get("content", ""))
-            cleaned_text = sanitize_response(raw_text)
-
-            if not cleaned_text:
-                raise ValueError("Model returned empty or non-text response after sanitization")
-
-            tokens_predicted = int(data.get("tokens_predicted", 0))
-            model_name = str(data.get("model", "gemma-4-12b"))
+            raw_text = data.get("content")
+            cleaned_text = sanitize_response(raw_text) if isinstance(raw_text, str) else ""
+            validation_errors = validate_plain_text(cleaned_text if isinstance(raw_text, str) else raw_text)
 
             log_interaction(
                 post_id=post_id,
@@ -196,7 +185,14 @@ def generate(
                 response_data=data,
                 cleaned_output=cleaned_text,
                 duration_ms=duration_ms,
+                validation_errors=validation_errors,
             )
+
+            if validation_errors:
+                raise ResponseValidationError(validation_errors)
+
+            tokens_predicted = int(data.get("tokens_predicted", 0))
+            model_name = str(data.get("model", "gemma-4-12b"))
 
             return LLMResponse(
                 raw_content=raw_text,
@@ -206,11 +202,25 @@ def generate(
                 model_name=model_name,
             )
 
+        except ResponseValidationError as exc:
+            last_error = exc
+            logger.warning(f"Rejected model answer for {post_id} ({step}, attempt {attempt}): {exc}")
+            full_prompt = format_gemma4_prompt(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt + "\n\nПредыдущий ответ отклонён валидатором:\n"
+                + "\n".join(exc.errors) + "\nПерепиши ответ, устранив эти нарушения.",
+                enable_thinking=enable_thinking,
+            )
+            # Replace the payload so each logged/sent attempt retains its own prompt.
+            payload = {**payload, "prompt": full_prompt}
         except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt < max_retries:
                 backoff = 2.0 ** attempt
                 time.sleep(backoff)
+
+    if isinstance(last_error, ResponseValidationError):
+        raise last_error
 
     raise RuntimeError(
         f"Failed to generate output for post '{post_id}' at step '{step}' after {max_retries} attempts: {last_error}"

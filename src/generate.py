@@ -11,14 +11,16 @@ from typing import Optional
 
 from src.lint import RUBRIC_LIMITS, LintResult, lint_post
 from src.llm import generate
+from src.paths import APP_DIR, DATA_DIR
 from src.logger import get_logger
+from src.validation import ResponseValidationError
 import src.plan as plan
 
 logger = get_logger("generate")
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+BASE_DIR: Path = DATA_DIR
 DOCS_DIR: Path = BASE_DIR / "docs"
-SYSTEM_PROMPT_PATH: Path = BASE_DIR / "SYSTEM.MD"
+SYSTEM_PROMPT_PATH: Path = APP_DIR / "SYSTEM.MD"
 OUT_DRAFTS_DIR: Path = BASE_DIR / "out" / "drafts"
 
 
@@ -74,7 +76,8 @@ def generate_post_content(
 ) -> tuple[str, LintResult]:
     """Generate or regenerate post text with Gemma 4 using docs, history, and feedback.
 
-    Returns tuple of (cleaned_text, lint_result).
+    Returns a validated draft and its lint result. Raises ResponseValidationError
+    after exhausted attempts; an existing draft and plan state stay intact.
     """
     system_prompt = _read_file_text(SYSTEM_PROMPT_PATH)
     min_len, max_len = RUBRIC_LIMITS.get(post.rubric, (700, 1000))
@@ -129,8 +132,9 @@ def generate_post_content(
     )
 
     user_prompt = "\n".join(prompt_parts)
-    best_text = ""
-    best_lint = LintResult(passed=False, char_count=0, min_len=min_len, max_len=max_len, errors=["Не генерировалось"])
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+    last_errors: list[str] = []
 
     logger.info(f"Generating content for post #{post.id} ({post.rubric}) - Title: '{post.title}'")
     if user_feedback:
@@ -151,22 +155,24 @@ def generate_post_content(
         text = response.cleaned_content
         lint_res = lint_post(text, post.rubric, stage="draft")
 
-        best_text = text
-        best_lint = lint_res
         if lint_res.passed:
             break
+        last_errors = lint_res.errors
+        user_prompt = "\n".join(prompt_parts) + "\n\nПредыдущий ответ отклонён валидатором:\n" + "\n".join(last_errors)
+    else:
+        raise ResponseValidationError(last_errors)
 
-    # Persist draft to out/drafts/{id}.md
+    # Only validated drafts may replace the saved version.
     OUT_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     draft_file = OUT_DRAFTS_DIR / f"{post.id}.md"
     with open(draft_file, "w", encoding="utf-8") as f:
-        f.write(best_text + "\n")
+        f.write(text + "\n")
 
     plan.advance(
         post.id,
         status="drafted",
         draft_path=f"out/drafts/{post.id}.md",
-        needs_review=(not best_lint.passed),
+        needs_review=False,
     )
 
-    return best_text, best_lint
+    return text, lint_res

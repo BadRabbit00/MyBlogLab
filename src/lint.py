@@ -1,11 +1,13 @@
 """Post content linter and validator for blog-agent.
 
-Enforces length limits, detects banned LLM clichés, validates persona boundaries,
-and counts emojis/kaomojis.
+Enforces the plain-text contract and length limits, detects banned LLM clichés,
+validates persona boundaries, and counts emojis/kaomojis.
 """
 
 from dataclasses import dataclass, field
 import re
+
+from src.validation import validate_plain_text
 
 BANNED_PATTERNS: list[tuple[str, str]] = [
     (r"\bважно отметить\b", "Штамп 'важно отметить'"),
@@ -98,7 +100,7 @@ def lint_post(text: str, rubric: str, stage: str = "publish") -> LintResult:
     effective_max = int(nominal_max * 1.25) if stage == "draft" else nominal_max
     effective_min = int(nominal_min * 0.85) if stage == "draft" else nominal_min
 
-    errors: list[str] = []
+    errors = validate_plain_text(text)
     warnings: list[str] = []
     banned_matches: list[str] = []
 

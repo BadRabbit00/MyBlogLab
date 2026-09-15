@@ -7,10 +7,13 @@ Controlled by LOG_LEVEL environment variable (default: INFO).
 
 import logging
 import os
+import re
 from pathlib import Path
 import sys
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+from src.paths import DATA_DIR
+
+BASE_DIR: Path = DATA_DIR
 LOGS_DIR: Path = BASE_DIR / "logs"
 
 # ANSI color codes for terminal output
@@ -22,7 +25,17 @@ COLOR_ERROR = "\033[31m"     # Red
 COLOR_CRITICAL = "\033[1;31m" # Bold Red
 
 
-class ColoredFormatter(logging.Formatter):
+def redact_secrets(text: str) -> str:
+    """Hide Telegram tokens, including those embedded in HTTP error URLs."""
+    return re.sub(r"\b(?:bot)?\d{5,}:[A-Za-z0-9_-]{20,}", "[REDACTED]", text)
+
+
+class SecretRedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_secrets(super().format(record))
+
+
+class ColoredFormatter(SecretRedactingFormatter):
     """Custom logging formatter that injects ANSI colors based on level."""
 
     LEVEL_COLORS = {
@@ -71,7 +84,7 @@ def setup_logging(
         file_handler = logging.FileHandler(target_log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)  # File always logs all details from DEBUG up
         file_format = "%(asctime)s [%(levelname)-8s] [%(name)s] (%(filename)s:%(lineno)d) %(message)s"
-        file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
+        file_formatter = SecretRedactingFormatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
 

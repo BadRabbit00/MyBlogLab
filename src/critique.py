@@ -9,11 +9,14 @@ from typing import Optional
 
 from src.lint import RUBRIC_LIMITS, lint_post
 from src.llm import generate
+from src.validation import ResponseValidationError, require_plain_text
 import src.plan as plan
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
-SYSTEM_PROMPT_PATH: Path = BASE_DIR / "SYSTEM.MD"
-CRITIQUE_TEMPLATE_PATH: Path = BASE_DIR / "prompts" / "critique.md"
+from src.paths import APP_DIR, DATA_DIR
+
+BASE_DIR: Path = DATA_DIR
+SYSTEM_PROMPT_PATH: Path = APP_DIR / "SYSTEM.MD"
+CRITIQUE_TEMPLATE_PATH: Path = APP_DIR / "prompts" / "critique.md"
 OUT_DRAFTS_DIR: Path = BASE_DIR / "out" / "drafts"
 
 
@@ -77,6 +80,7 @@ def run_critique(post_id: Optional[str] = None) -> bool:
             custom_params={"n_predict": 3072},
         )
         refined_text = response.cleaned_content
+        require_plain_text(refined_text)
 
         # 3. Post-critique lint check
         final_lint = lint_post(refined_text, post.rubric, stage="critique")
@@ -93,6 +97,10 @@ def run_critique(post_id: Optional[str] = None) -> bool:
 
         return True
 
+    except ResponseValidationError:
+        # Keep the saved draft and its current status when the rewrite is invalid.
+        plan.advance(post.id, status=post.status, needs_review=True)
+        return False
     except Exception as exc:
         # If critique fails due to LLM error, keep existing draft but mark needs_review
         plan.advance(post.id, status="queued", needs_review=True)
