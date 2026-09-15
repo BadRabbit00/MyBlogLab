@@ -11,7 +11,10 @@ from typing import Optional
 
 from src.lint import RUBRIC_LIMITS, LintResult, lint_post
 from src.llm import generate
+from src.logger import get_logger
 import src.plan as plan
+
+logger = get_logger("generate")
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 DOCS_DIR: Path = BASE_DIR / "docs"
@@ -129,8 +132,13 @@ def generate_post_content(
     best_text = ""
     best_lint = LintResult(passed=False, char_count=0, min_len=min_len, max_len=max_len, errors=["Не генерировалось"])
 
+    logger.info(f"Generating content for post #{post.id} ({post.rubric}) - Title: '{post.title}'")
+    if user_feedback:
+        logger.info(f"Incorporating user feedback into prompt: '{user_feedback}'")
+
     for attempt in range(1, max_attempts + 1):
         step_name = f"bot_regen_{attempt}" if user_feedback else f"bot_gen_{attempt}"
+        logger.debug(f"LLM generation attempt {attempt}/{max_attempts} (step={step_name})")
         response = generate(
             post_id=post.id,
             step=step_name,

@@ -32,6 +32,7 @@ from aiogram.types import (
 
 from src.generate import generate_post_content
 from src.image import generate_card
+from src.logger import get_logger
 import src.plan as plan
 from src.publish import get_bot_token, markdown_to_telegram_html
 
@@ -39,8 +40,7 @@ BASE_DIR: Path = Path(__file__).resolve().parent.parent
 OUT_DRAFTS_DIR: Path = BASE_DIR / "out" / "drafts"
 OUT_IMAGES_DIR: Path = BASE_DIR / "out" / "images"
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("blog-bot")
+logger = get_logger("bot")
 
 router = Router()
 

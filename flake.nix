@@ -16,9 +16,51 @@
         ruamel-yaml
         httpx
         aiogram
+        pytest
+        pytest-asyncio
       ]);
+
+      appSource = pkgs.runCommand "blog-agent-app" { } ''
+        mkdir -p $out/app
+        cp -r ${./src} $out/app/src
+        cp -r ${./prompts} $out/app/prompts
+        cp -r ${./templates} $out/app/templates
+        cp -r ${./docs} $out/app/docs
+        cp ${./SYSTEM.MD} $out/app/SYSTEM.MD
+        cp ${./persona.md} $out/app/persona.md
+        cp ${./content-plan.yaml} $out/app/content-plan.yaml
+        mkdir -p $out/app/out/drafts $out/app/out/images $out/app/logs
+      '';
+
+      container = pkgs.dockerTools.buildLayeredImage {
+        name = "blog-agent";
+        tag = "latest";
+        contents = [
+          pythonEnv
+          pkgs.resvg
+          pkgs.liberation_ttf
+          pkgs.cacert
+          pkgs.coreutils
+          pkgs.bashInteractive
+          appSource
+        ];
+        config = {
+          WorkingDir = "/app";
+          Cmd = [ "python3" "src/bot.py" ];
+          Env = [
+            "PYTHONPATH=/app"
+            "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            "PATH=${pythonEnv}/bin:${pkgs.resvg}/bin:${pkgs.coreutils}/bin:${pkgs.bashInteractive}/bin"
+          ];
+        };
+      };
     in
     {
+      packages.${system} = {
+        inherit container;
+        default = container;
+      };
+
       devShells.${system}.default = pkgs.mkShell {
         name = "blog-agent-dev";
         packages = [

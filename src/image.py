@@ -11,7 +11,10 @@ import subprocess
 import tempfile
 from typing import Optional
 
+from src.logger import get_logger
 import src.plan as plan
+
+logger = get_logger("image")
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH: Path = BASE_DIR / "templates" / "card.svg"
@@ -182,6 +185,7 @@ def generate_card(post_id: str) -> Path:
     OUT_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     out_png_path = OUT_IMAGES_DIR / f"{post.id}.png"
 
+    logger.debug(f"Rendering card for post #{post.id} ({post.rubric}) to {out_png_path}")
     # Render through resvg
     with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False, encoding="utf-8") as tmp_svg:
         tmp_svg_path = Path(tmp_svg.name)
@@ -191,6 +195,7 @@ def generate_card(post_id: str) -> Path:
     try:
         cmd = ["resvg", str(tmp_svg_path), str(out_png_path)]
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logger.info(f"Generated card #{post.id} -> {out_png_path.name}")
     finally:
         if tmp_svg_path.exists():
             tmp_svg_path.unlink()

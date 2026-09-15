@@ -14,7 +14,7 @@ BANNED_PATTERNS: list[tuple[str, str]] = [
     (r"\bиграет ключевую роль\b", "Штамп 'играет ключевую роль'"),
     (r"\bне только.{1,40}но и\b", "Конструкция 'не только... но и'"),
     (r"\bдавайте разбер[её]мся\b", "Зачин 'давайте разберемся'"),
-    (r"\bитак,\b", "Затычка 'итак,'"),
+    (r"\bитак,", "Затычка 'итак,'"),
     (r"\bв заключение\b", "Штамп 'в заключение'"),
     (r"—.{1,60}—", "Вставка в длинных тире"),
     (r"\b(Итог|Вывод):", "Подзаголовок-затычка 'Итог/Вывод:'"),
@@ -46,6 +46,7 @@ EMOJI_PATTERN: re.Pattern[str] = re.compile(
     r"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
     r"\U0001FA00-\U0001FA6F"  # Chess Symbols
     r"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+    r"\U00002600-\U000026FF"  # Misc Symbols (lightning, warnings, gears)
     r"\U00002702-\U000027B0"  # Dingbats
     r"]",
     flags=re.UNICODE,

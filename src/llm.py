@@ -13,6 +13,10 @@ from typing import Optional
 
 import httpx
 
+from src.logger import get_logger
+
+logger = get_logger("llm")
+
 LOGS_DIR: Path = Path(__file__).resolve().parent.parent / "logs"
 DEFAULT_ENDPOINT: str = "http://127.0.0.1:8080/completion"
 

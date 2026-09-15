@@ -22,3 +22,12 @@ out/images/*.jpg
 .vscode/
 .idea/
 *.tmp
+
+# Nix build outputs
+result
+result-*
+
+# Environment files
+.env
+.env.*
+

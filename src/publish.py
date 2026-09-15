@@ -15,20 +15,59 @@ from typing import Optional
 import httpx
 
 from src.image import generate_card
+from src.logger import get_logger
 import src.plan as plan
 
+logger = get_logger("publish")
+
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
+ENV_FILE: Path = BASE_DIR / ".env"
 TOKEN_PATHS: list[Path] = [
     Path.home() / ".config" / "blog-agent" / "bot_token",
     BASE_DIR / ".tg_bot_token",
 ]
 
 
-def get_bot_token() -> str:
-    """Read Telegram bot token from an isolated file with strict 0600 permissions.
+def _read_token_from_env_file(env_path: Path) -> Optional[str]:
+    """Parse .env file for TELEGRAM_BOT_TOKEN or BOT_TOKEN without third-party deps."""
+    if not env_path.exists():
+        return None
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key in ("TELEGRAM_BOT_TOKEN", "BOT_TOKEN") and val:
+                        return val
+    except Exception as e:
+        logger.warning(f"Failed to read .env file at {env_path}: {e}")
+    return None
 
-    Refuses to execute if the token file does not exist or has insecure permissions.
+
+def get_bot_token() -> str:
+    """Read Telegram bot token with priority:
+    1. Environment variables TELEGRAM_BOT_TOKEN / BOT_TOKEN
+    2. Local .env file
+    3. Dedicated token files (~/.config/blog-agent/bot_token, .tg_bot_token) with 0600 permissions
     """
+    # 1. Check process environment (standard for Docker runtime --env-file .env)
+    env_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+    if env_token and env_token.strip():
+        logger.debug("Bot token loaded from environment variables")
+        return env_token.strip()
+
+    # 2. Check local .env file
+    file_env_token = _read_token_from_env_file(ENV_FILE)
+    if file_env_token:
+        logger.debug(f"Bot token loaded from {ENV_FILE}")
+        return file_env_token
+
+    # 3. Check isolated files with permission checks
     token_file: Optional[Path] = None
     for candidate in TOKEN_PATHS:
         if candidate.exists():
@@ -38,13 +77,12 @@ def get_bot_token() -> str:
     if not token_file:
         paths_str = ", ".join(str(p) for p in TOKEN_PATHS)
         raise FileNotFoundError(
-            f"Telegram bot token file not found. Create one with permissions 0600 at one of: {paths_str}"
+            f"Telegram bot token not found. Set TELEGRAM_BOT_TOKEN env var, add to .env, or create 0600 file at: {paths_str}"
         )
 
     file_stat = token_file.stat()
     file_mode = stat.S_IMODE(file_stat.st_mode)
     if file_mode not in (0o600, 0o400):
-        # Enforce secure permissions rather than leaking credentials
         os.chmod(token_file, 0o600)
 
     with open(token_file, "r", encoding="utf-8") as f:
@@ -53,6 +91,7 @@ def get_bot_token() -> str:
     if not token:
         raise ValueError(f"Telegram bot token file at {token_file} is empty.")
 
+    logger.debug(f"Bot token loaded from file {token_file}")
     return token
 
 

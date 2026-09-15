@@ -13,6 +13,10 @@ from typing import Optional
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from src.logger import get_logger
+
+logger = get_logger("plan")
+
 PLAN_PATH: Path = Path(__file__).resolve().parent.parent / "content-plan.yaml"
 
 
@@ -95,6 +99,7 @@ def load(path: Path = PLAN_PATH) -> Plan:
     if not path.exists():
         raise FileNotFoundError(f"Content plan not found at {path}")
 
+    logger.debug(f"Loading content plan from {path}")
     yaml = _get_yaml_parser()
     with open(path, "r", encoding="utf-8") as f:
         raw_data: CommentedMap = yaml.load(f)
@@ -107,7 +112,7 @@ def load(path: Path = PLAN_PATH) -> Plan:
         for raw_post in raw_posts
         if isinstance(raw_post, (dict, CommentedMap))
     ]
-
+    logger.debug(f"Loaded {len(posts)} posts from plan")
     return Plan(meta=meta_data, posts=posts, raw_yaml=raw_data)
 
 
@@ -124,6 +129,7 @@ def save_atomic(data: CommentedMap, target_path: Path = PLAN_PATH) -> None:
         os.fsync(tmp_file.fileno())
 
     os.replace(tmp_name, target_path)
+    logger.debug(f"Atomically saved plan to {target_path}")
 
 
 def get_post(post_id: str, plan_path: Path = PLAN_PATH) -> Optional[Post]:
@@ -156,7 +162,7 @@ def next_for(step: str, plan_path: Path = PLAN_PATH) -> Optional[Post]:
     for post in plan.posts:
         if post.status == target_status:
             if target_status == "pending" and post.rubric == "dnevnik":
-                continue  # dnevnik is written manually by human
+                continue  # дневник пишется вручную человеком
             return post
     return None
 
@@ -198,13 +204,16 @@ def advance(post_id: str, status: str, plan_path: Path = PLAN_PATH, **fields: ob
             break
 
     if not found:
+        logger.error(f"Post with id '{post_id}' not found in content plan.")
         raise KeyError(f"Post with id '{post_id}' not found in content plan.")
 
     save_atomic(data, plan_path)
+    logger.info(f"Post #{post_id} status updated -> '{status}' (fields: {list(fields.keys())})")
 
 
 def kill(post_id: str, reason: str, plan_path: Path = PLAN_PATH) -> None:
     """Mark post as killed with an explicit diagnostic reason."""
+    logger.warning(f"Killing post #{post_id}. Reason: {reason}")
     advance(post_id, status="killed", plan_path=plan_path, kill_reason=reason)
 
 
