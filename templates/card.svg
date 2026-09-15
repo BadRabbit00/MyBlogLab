@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0c10"/>
+      <stop offset="50%" stop-color="#0f141c"/>
+      <stop offset="100%" stop-color="#07080b"/>
+    </linearGradient>
+
+    <!-- Accent Glow -->
+    <radialGradient id="accentGlow" cx="80%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="{{ACCENT_COLOR}}" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Grid Pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1f293d" stroke-width="1" stroke-opacity="0.4"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#accentGlow)"/>
+
+  <!-- Outer Frame -->
+  <rect x="30" y="30" width="1140" height="570" rx="16" fill="none" stroke="#1e293b" stroke-width="2"/>
+  <rect x="30" y="30" width="1140" height="570" rx="16" fill="none" stroke="{{ACCENT_COLOR}}" stroke-width="1" stroke-opacity="0.3"/>
+
+  <!-- Geometric Accent Group (placed deterministically) -->
+  <g transform="translate({{ACCENT_X}}, {{ACCENT_Y}})" stroke="{{ACCENT_COLOR}}" fill="none" stroke-width="1.5">
+    {{ACCENT_SHAPE}}
+  </g>
+
+  <!-- Terminal Header Bar -->
+  <g transform="translate(70, 70)">
+    <circle cx="0" cy="0" r="5" fill="#f43f5e" opacity="0.8"/>
+    <circle cx="20" cy="0" r="5" fill="#eab308" opacity="0.8"/>
+    <circle cx="40" cy="0" r="5" fill="#10b981" opacity="0.8"/>
+    <text x="70" y="4" font-family="'Liberation Mono', monospace" font-size="14" fill="#64748b" letter-spacing="1.5">sandbox://mika-agent/runtime/isolated</text>
+  </g>
+
+  <!-- Post ID & Rubric Badge -->
+  <g transform="translate(70, 150)">
+    <!-- Rubric Badge Background -->
+    <rect x="0" y="0" width="{{BADGE_WIDTH}}" height="36" rx="8" fill="{{ACCENT_COLOR}}" fill-opacity="0.12" stroke="{{ACCENT_COLOR}}" stroke-width="1.5"/>
+    <text x="16" y="23" font-family="'Liberation Mono', monospace" font-size="14" font-weight="700" fill="{{ACCENT_COLOR}}" letter-spacing="2">{{RUBRIC_LABEL}}</text>
+
+    <!-- Post ID -->
+    <text x="{{ID_OFFSET_X}}" y="23" font-family="'Liberation Mono', monospace" font-size="14" font-weight="600" fill="#64748b" letter-spacing="1.5">#{{POST_ID}}</text>
+  </g>
+
+  <!-- Title (Multi-line SVG Text) -->
+  <g transform="translate(70, 240)">
+    {{TITLE_TSPAN_LINES}}
+  </g>
+
+  <!-- Footer Branding -->
+  <g transform="translate(70, 550)">
+    <line x1="0" y1="0" x2="1060" y2="0" stroke="#1e293b" stroke-width="1.5"/>
+    <text x="0" y="28" font-family="'Liberation Mono', monospace" font-size="14" fill="#94a3b8" letter-spacing="1">AGENT_SECURITY // LAB_REPORT</text>
+    <text x="1060" y="28" text-anchor="end" font-family="'Liberation Mono', monospace" font-size="14" fill="{{ACCENT_COLOR}}" font-weight="bold">AUTONOMOUS_CHANNEL</text>
+  </g>
+</svg>

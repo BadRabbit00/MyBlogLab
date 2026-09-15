@@ -1,0 +1,894 @@
+meta:
+  channel: "@CHANGE_ME"
+  start: 2026-09-21
+  end: 2026-11-01
+  weeks: 6
+  total_posts: 54
+  style_ref: prompts/style.md
+  rubrics:
+    razbor: "основная линия, 800-1000 знаков"
+    keys: "разбор инцидента или механизма атаки, 700-1000 знаков"
+    instrument: "один приём или утилита, 300-500 знаков"
+    dnevnik: "пишется вручную, не генерится"
+  schedule:
+    morning: "09:30 +/- 40 мин"
+    evening: "19:00 +/- 40 мин (только вт и пт)"
+
+posts:
+
+  # ============ НЕДЕЛЯ 1: агенту дают руки ============
+
+  - id: w1-01
+    date: 2026-09-21
+    slot: morning
+    rubric: keys
+    title: "Агент, который снёс прод-базу"
+    thesis: >
+      Самые громкие провалы агентов — не взлом, а исполнительность:
+      агент буквально сделал то, что попросили, в окружении,
+      где этого делать было нельзя.
+    keywords: [инцидент, прод, необратимые операции]
+    image_hint: "терминал, зелёный ok, красная строка DROP DATABASE"
+    verify: true
+    status: drafted
+    draft_path: out/drafts/w1-01.md
+    published_at:
+    tg_message_id:
+
+    kill_reason:
+    needs_review: false
+    doc_prefix: POST1
+  - id: w1-02
+    date: 2026-09-22
+    slot: morning
+    rubric: razbor
+    title: "Чат-бот и агент — разница не в модели"
+    thesis: >
+      Одна и та же модель становится агентом в момент, когда получает
+      право на побочный эффект: запись в файл, сетевой запрос, запуск процесса.
+    keywords: [агент, побочный эффект, права]
+    image_hint: "две коробки: одна с выходом только вниз в текст, вторая с тремя стрелками в систему"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST2
+
+  - id: w1-03
+    date: 2026-09-22
+    slot: evening
+    rubric: instrument
+    title: "strace: посмотреть, что процесс делает на самом деле"
+    thesis: >
+      Логи агента показывают его намерения, strace — его действия,
+      и расходятся они чаще, чем хочется.
+    keywords: [strace, syscall, наблюдаемость]
+    image_hint: "поток системных вызовов в терминале"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST3
+
+  - id: w1-04
+    date: 2026-09-23
+    slot: morning
+    rubric: razbor
+    title: "Как модель получает руки: tool use изнутри"
+    thesis: >
+      Модель не вызывает функции — она возвращает текст, который
+      твой код решает исполнить, и вся безопасность живёт именно в этом решении.
+    keywords: [tool use, function calling, рантайм]
+    image_hint: "схема: модель -> json -> рантайм -> система"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST4
+
+  - id: w1-05
+    date: 2026-09-24
+    slot: morning
+    rubric: keys
+    title: "Инструкция, спрятанная в README"
+    thesis: >
+      Для агента нет разницы между твоим запросом и текстом файла,
+      который он прочитал: и то и другое приходит одним потоком токенов.
+    keywords: [prompt injection, недоверенный ввод]
+    image_hint: "открытый markdown-файл, одна строка подсвечена красным"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST5
+
+  - id: w1-06
+    date: 2026-09-25
+    slot: morning
+    rubric: razbor
+    title: "Почему «я же написал в промпте не делать этого» не работает"
+    thesis: >
+      Системный промпт — это просьба, а не ограничение: он лежит
+      в том же контексте, что и атакующий текст, и конкурирует с ним на равных.
+    keywords: [системный промпт, policy vs mechanism]
+    image_hint: "весы: на одной чаше текст правил, на другой текст атаки"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST6
+
+  - id: w1-07
+    date: 2026-09-25
+    slot: evening
+    rubric: instrument
+    title: "lsof: что агент открыл, пока ты не смотрел"
+    thesis: >
+      Один вызов lsof по pid агента показывает все файлы и сокеты,
+      до которых он реально дотянулся за сессию.
+    keywords: [lsof, файловые дескрипторы]
+    image_hint: "список открытых дескрипторов, среди них ~/.ssh"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST7
+
+  - id: w1-08
+    date: 2026-09-26
+    slot: morning
+    rubric: instrument
+    title: "Твои ключи уже в контексте агента"
+    thesis: >
+      Переменные окружения наследуются дочерним процессом целиком,
+      поэтому агент видит все токены, которые есть у твоего шелла.
+    keywords: [env, секреты, наследование]
+    image_hint: "вывод env с замазанными значениями"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST8
+
+  - id: w1-09
+    date: 2026-09-27
+    slot: morning
+    rubric: dnevnik
+    title: "Неделя 1: как я собирал этот блог"
+    thesis: >
+      Пишется вручную. Что заработало с первого раза, что пришлось
+      переделать, сколько черновиков ушло в мусор.
+    keywords: [дневник, пайплайн]
+    image_hint: "скриншот yaml-плана"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST9
+
+  # ============ НЕДЕЛЯ 2: что идёт не так ============
+
+  - id: w2-01
+    date: 2026-09-28
+    slot: morning
+    rubric: keys
+    title: "rm -rf $VAR, где VAR пустая"
+    thesis: >
+      Классическая шелл-ошибка становится катастрофой, когда команду
+      собирает модель: она не проверяет, что подставилось в переменную.
+    keywords: [шелл, подстановка, необратимость]
+    image_hint: "строка команды, где переменная схлопывается в пустоту"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST10
+
+  - id: w2-02
+    date: 2026-09-29
+    slot: morning
+    rubric: razbor
+    title: "Два вида инъекции: прямая и косвенная"
+    thesis: >
+      Прямую инъекцию пишет пользователь и её хотя бы видно в логе,
+      косвенная приходит из данных и не оставляет следа в диалоге.
+    keywords: [prompt injection, indirect, классификация]
+    image_hint: "две стрелки в контекст: от пользователя и от веб-страницы"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST11
+
+  - id: w2-03
+    date: 2026-09-29
+    slot: evening
+    rubric: instrument
+    title: "Git — самая дешёвая страховка от агента"
+    thesis: >
+      Коммит перед запуском агента превращает любую его правку
+      из инцидента в diff, который можно откатить одной командой.
+    keywords: [git, откат, рабочий процесс]
+    image_hint: "git diff с большим количеством удалённых строк"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST12
+
+  - id: w2-04
+    date: 2026-09-30
+    slot: morning
+    rubric: razbor
+    title: "Агент и твой счёт за облако"
+    thesis: >
+      Цикл «попробовал — не вышло — попробовал снова» без лимита
+      вызовов превращает безобидную задачу в счёт на три знака.
+    keywords: [стоимость, циклы, лимиты]
+    image_hint: "график расхода токенов, уходящий вертикально вверх"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST13
+
+  - id: w2-05
+    date: 2026-10-01
+    slot: morning
+    rubric: keys
+    title: "Утечка через сторонний MCP-сервер"
+    thesis: >
+      Подключая MCP-сервер, ты отдаёшь ему не только запросы,
+      но и всё, что агент успел собрать в контекст к этому моменту.
+    keywords: [MCP, третьи стороны, контекст]
+    image_hint: "схема: контекст агента уходит наружу к чужому серверу"
+    verify: true
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST14
+
+  - id: w2-06
+    date: 2026-10-02
+    slot: morning
+    rubric: razbor
+    title: "Почему агент пишет «готово», когда ничего не готово"
+    thesis: >
+      Модель оптимизирует правдоподобие ответа, а не факт выполнения,
+      поэтому отчёт об успехе — самая ненадёжная часть её вывода.
+    keywords: [галлюцинации, верификация, отчёт]
+    image_hint: "зелёная галочка поверх пустой директории"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST15
+
+  - id: w2-07
+    date: 2026-10-02
+    slot: evening
+    rubric: instrument
+    title: "Режим dry-run как обязательный шаг"
+    thesis: >
+      Если инструмент агента не умеет показывать план без исполнения,
+      его нельзя давать агенту — только обёртку над ним.
+    keywords: [dry-run, обёртки, план]
+    image_hint: "вывод команды с пометкой would remove"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST16
+
+  - id: w2-08
+    date: 2026-10-03
+    slot: morning
+    rubric: instrument
+    title: "Логируй вызовы инструментов, а не только диалог"
+    thesis: >
+      Диалог показывает, о чём вы договорились, лог вызовов —
+      что произошло; для разбора инцидента полезен только второй.
+    keywords: [аудит, логи, tool calls]
+    image_hint: "jsonl-лог с вызовами инструментов"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST17
+
+  - id: w2-09
+    date: 2026-10-04
+    slot: morning
+    rubric: dnevnik
+    title: "Неделя 2: где генератор начал повторяться"
+    thesis: >
+      Пишется вручную. Самоповторы, вычищенные темы, правки промптов.
+    keywords: [дневник, самоповторы]
+    image_hint: "два похожих поста рядом"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST18
+
+  # ============ НЕДЕЛЯ 3: слои изоляции ============
+
+  - id: w3-01
+    date: 2026-10-05
+    slot: morning
+    rubric: keys
+    title: "Смонтированный docker.sock — это root на хосте"
+    thesis: >
+      Проброс docker.sock внутрь контейнера отменяет весь смысл
+      контейнера: изнутри можно поднять новый с примонтированным корнем.
+    keywords: [docker, сокет, побег]
+    image_hint: "контейнер со стрелкой, обходящей его границу"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST19
+
+  - id: w3-02
+    date: 2026-10-06
+    slot: morning
+    rubric: razbor
+    title: "Namespaces: из чего вообще состоит изоляция в Linux"
+    thesis: >
+      Изоляция процесса — это не одна кнопка, а шесть независимых
+      пространств имён, и забытое любое из них открывает дыру.
+    keywords: [namespaces, pid, mount, net]
+    image_hint: "шесть слоёв, один из них полупрозрачный"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST20
+
+  - id: w3-03
+    date: 2026-10-06
+    slot: evening
+    rubric: instrument
+    title: "unshare: песочница в одну строку"
+    thesis: >
+      unshare даёт потрогать изоляцию руками без единого демона
+      и объясняет контейнеры лучше любой статьи про них.
+    keywords: [unshare, namespaces, практика]
+    image_hint: "терминал с unshare и пустым ps"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST21
+
+  - id: w3-04
+    date: 2026-10-07
+    slot: morning
+    rubric: razbor
+    title: "Файловая система: агент должен видеть только проект"
+    thesis: >
+      Правильная граница для агента — не домашняя директория,
+      а один проект, примонтированный на запись, и всё остальное read-only.
+    keywords: [bind mount, read-only, ФС]
+    image_hint: "дерево каталогов, где доступен один подкаталог"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST22
+
+  - id: w3-05
+    date: 2026-10-08
+    slot: morning
+    rubric: keys
+    title: "Агент, который прочитал ~/.ssh"
+    thesis: >
+      Чтобы утечь, ключам не нужен злой умысел: достаточно, чтобы
+      агент «на всякий случай» сложил содержимое домашней папки в контекст.
+    keywords: [ssh, ключи, контекст]
+    image_hint: "приватный ключ, попадающий в поток токенов"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST23
+
+  - id: w3-06
+    date: 2026-10-09
+    slot: morning
+    rubric: razbor
+    title: "Сеть: запрещено всё, кроме списка"
+    thesis: >
+      Для агента блок-лист бесполезен — работает только явный список
+      разрешённых доменов, потому что данные утекают куда угодно.
+    keywords: [allowlist, egress, прокси]
+    image_hint: "прокси, пропускающий три домена и режущий остальные"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST24
+
+  - id: w3-07
+    date: 2026-10-09
+    slot: evening
+    rubric: instrument
+    title: "bubblewrap за пять минут"
+    thesis: >
+      bwrap даёт настоящую песочницу без рута и без демона —
+      это самый короткий путь от «страшно» до «заперто».
+    keywords: [bubblewrap, bwrap, sandbox]
+    image_hint: "команда bwrap с флагами ro-bind"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST25
+
+  - id: w3-08
+    date: 2026-10-10
+    slot: morning
+    rubric: instrument
+    title: "seccomp: отрезать системные вызовы"
+    thesis: >
+      Большинству агентов не нужен ptrace и монтирование —
+      и лучший способ это гарантировать не правилом, а фильтром.
+    keywords: [seccomp, syscall, фильтр]
+    image_hint: "список syscall, часть перечёркнута"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST26
+
+  - id: w3-09
+    date: 2026-10-11
+    slot: morning
+    rubric: dnevnik
+    title: "Неделя 3: что я сам понял, пока писал"
+    thesis: >
+      Пишется вручную. Какие посты пришлось переписывать после проверки фактов.
+    keywords: [дневник, факт-чек]
+    image_hint: "черновик с пометками"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST27
+
+  # ============ НЕДЕЛЯ 4: инструменты ============
+
+  - id: w4-01
+    date: 2026-10-12
+    slot: morning
+    rubric: keys
+    title: "Docker никогда не был границей безопасности"
+    thesis: >
+      Контейнер изолирует от случайности, но не от намерения:
+      общее ядро означает, что одна уязвимость в нём отменяет всю схему.
+    keywords: [docker, ядро, модель угроз]
+    image_hint: "контейнеры на одном ядре, ядро подсвечено"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST28
+
+  - id: w4-02
+    date: 2026-10-13
+    slot: morning
+    rubric: razbor
+    title: "Контейнер, microVM, виртуалка: что выбрать под агента"
+    thesis: >
+      Выбор определяется не удобством, а тем, что ты готов потерять,
+      если агент выйдет наружу: цена побега растёт, цена запуска тоже.
+    keywords: [firecracker, kvm, компромисс]
+    image_hint: "три варианта по осям изоляция/оверхед"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST29
+
+  - id: w4-03
+    date: 2026-10-13
+    slot: evening
+    rubric: instrument
+    title: "firejail для тех, кому лень"
+    thesis: >
+      Firejail закрывает 80% бытовых рисков одной командой,
+      и это честный стартовый уровень, если альтернатива — ничего.
+    keywords: [firejail, быстрый старт]
+    image_hint: "запуск через firejail"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST30
+
+  - id: w4-04
+    date: 2026-10-14
+    slot: morning
+    rubric: razbor
+    title: "Nix: воспроизводимость как свойство безопасности"
+    thesis: >
+      Если окружение агента описано декларативно, вопрос «что у него
+      было под рукой в момент инцидента» перестаёт быть вопросом.
+    keywords: [nix, декларативность, форензика]
+    image_hint: "nix-выражение рядом с деревом зависимостей"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST31
+
+  - id: w4-05
+    date: 2026-10-15
+    slot: morning
+    rubric: keys
+    title: "Зависимость, которую притащил агент"
+    thesis: >
+      Агент, которому разрешено ставить пакеты, — это ещё один
+      канал поставки кода в твою систему, причём без ревью.
+    keywords: [supply chain, npm, установка пакетов]
+    image_hint: "install-лог с незнакомым пакетом"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST32
+
+  - id: w4-06
+    date: 2026-10-16
+    slot: morning
+    rubric: razbor
+    title: "Декларативная песочница на NixOS"
+    thesis: >
+      Профиль агента можно описать как обычный модуль системы:
+      своя HOME, свой набор пакетов, свои права — и всё это в git.
+    keywords: [nixos, модуль, профиль агента]
+    image_hint: "модуль nixos с секцией systemd-сервиса"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST33
+
+  - id: w4-07
+    date: 2026-10-16
+    slot: evening
+    rubric: instrument
+    title: "nix-shell --pure: окружение без сюрпризов"
+    thesis: >
+      Флаг --pure отрезает наследование переменных окружения,
+      то есть ровно тот канал, через который утекают ключи.
+    keywords: [nix-shell, pure, env]
+    image_hint: "пустой вывод env внутри pure-шелла"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST34
+
+  - id: w4-08
+    date: 2026-10-17
+    slot: morning
+    rubric: instrument
+    title: "systemd умеет больше, чем ты используешь"
+    thesis: >
+      ProtectHome, PrivateTmp и DynamicUser дают половину песочницы
+      бесплатно, если агент запускается как сервис.
+    keywords: [systemd, hardening, unit]
+    image_hint: "unit-файл с опциями защиты"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST35
+
+  - id: w4-09
+    date: 2026-10-18
+    slot: morning
+    rubric: dnevnik
+    title: "Неделя 4: сколько постов я убил"
+    thesis: >
+      Пишется вручную. Статистика killed-постов и за что они вылетели.
+    keywords: [дневник, статистика]
+    image_hint: "список тем с зачёркнутыми строками"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST36
+
+  # ============ НЕДЕЛЯ 5: стенд ============
+
+  - id: w5-01
+    date: 2026-10-19
+    slot: morning
+    rubric: keys
+    title: "Моя собственная дыра в стенде"
+    thesis: >
+      Первая версия песочницы протекала в очевидном месте,
+      и нашлось это не рассуждением, а попыткой из неё выбраться.
+    keywords: [стенд, ошибка, самопроверка]
+    image_hint: "схема стенда с красной стрелкой наружу"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST37
+
+  - id: w5-02
+    date: 2026-10-20
+    slot: morning
+    rubric: razbor
+    title: "Как устроен стенд: три уровня доверия"
+    thesis: >
+      Агенту не нужен один режим доступа — нужны три: чтение,
+      запись в песочницу и подтверждаемые действия наружу.
+    keywords: [архитектура, уровни доступа]
+    image_hint: "три концентрических круга доступа"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST38
+
+  - id: w5-03
+    date: 2026-10-20
+    slot: evening
+    rubric: instrument
+    title: "Как проверить, что изоляция вообще работает"
+    thesis: >
+      Песочницу нельзя считать рабочей, пока ты сам не попробовал
+      из неё выйти пятью известными способами.
+    keywords: [проверка, тесты, escape]
+    image_hint: "чек-лист попыток побега"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST39
+
+  - id: w5-04
+    date: 2026-10-21
+    slot: morning
+    rubric: razbor
+    title: "Даю агенту реальную задачу и смотрю на руки"
+    thesis: >
+      На живой задаче видно, что агент делает лишние шаги наружу
+      не по злому умыслу, а потому что так короче путь к ответу.
+    keywords: [эксперимент, наблюдение]
+    image_hint: "таймлайн вызовов инструментов"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST40
+
+  - id: w5-05
+    date: 2026-10-22
+    slot: morning
+    rubric: keys
+    title: "Три сценария атаки на моём стенде"
+    thesis: >
+      Инъекция через файл, эксфильтрация через разрешённый домен
+      и исчерпание ресурсов — по одному на каждый слой защиты.
+    keywords: [атака, сценарии, эксфильтрация]
+    image_hint: "три стрелки, бьющие в разные слои"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST41
+
+  - id: w5-06
+    date: 2026-10-23
+    slot: morning
+    rubric: razbor
+    title: "Что утекло, несмотря на песочницу"
+    thesis: >
+      Изоляция не спасает от эксфильтрации по разрешённому каналу:
+      если агенту можно в API, он может унести туда что угодно.
+    keywords: [эксфильтрация, allowlist, предел]
+    image_hint: "данные, уходящие через разрешённую стрелку"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST42
+
+  - id: w5-07
+    date: 2026-10-23
+    slot: evening
+    rubric: instrument
+    title: "auditd: запись всего, что было"
+    thesis: >
+      Аудит нужен не чтобы предотвратить, а чтобы через неделю
+      ответить на вопрос, что именно агент трогал.
+    keywords: [auditd, форензика]
+    image_hint: "строка audit-лога"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST43
+
+  - id: w5-08
+    date: 2026-10-24
+    slot: morning
+    rubric: instrument
+    title: "Стенд, который поднимается одной командой"
+    thesis: >
+      Если демо нельзя воспроизвести с нуля на чужой машине,
+      это не стенд, а история про то, как однажды получилось.
+    keywords: [воспроизводимость, flake, демо]
+    image_hint: "одна команда запуска в терминале"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST44
+
+  - id: w5-09
+    date: 2026-10-25
+    slot: morning
+    rubric: dnevnik
+    title: "Неделя 5: что ломалось в пайплайне"
+    thesis: >
+      Пишется вручную. Сбои публикации, кривые картинки, ручные вмешательства.
+    keywords: [дневник, сбои]
+    image_hint: "лог с ошибкой telegram api"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST45
+
+  # ============ НЕДЕЛЯ 6: итоги ============
+
+  - id: w6-01
+    date: 2026-10-26
+    slot: morning
+    rubric: keys
+    title: "Чек-лист перед тем, как дать агенту доступ"
+    thesis: >
+      Семь вопросов, на которые стоит ответить до запуска,
+      и все они про то, что произойдёт, когда агент ошибётся.
+    keywords: [чек-лист, практика]
+    image_hint: "чек-лист из семи пунктов"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST46
+
+  - id: w6-02
+    date: 2026-10-27
+    slot: morning
+    rubric: razbor
+    title: "Чего изоляция не решает"
+    thesis: >
+      Песочница защищает систему от агента, но не тебя от его
+      уверенно неправильных ответов — это разные задачи.
+    keywords: [пределы, доверие, качество]
+    image_hint: "запертая коробка, из которой выходит неверный ответ"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST47
+
+  - id: w6-03
+    date: 2026-10-27
+    slot: evening
+    rubric: instrument
+    title: "Минимальный безопасный сетап на сегодня"
+    thesis: >
+      Отдельный пользователь, отдельная HOME, allowlist доменов
+      и git-коммит перед запуском закрывают большую часть рисков.
+    keywords: [минимум, старт]
+    image_hint: "четыре пункта списком"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST48
+
+  - id: w6-04
+    date: 2026-10-28
+    slot: morning
+    rubric: razbor
+    title: "Куда это всё едет"
+    thesis: >
+      Права агентов будут расти быстрее, чем инструменты контроля,
+      поэтому выигрывают те схемы, где ограничение структурное, а не договорное.
+    keywords: [прогноз, структурные гарантии]
+    image_hint: "две расходящиеся кривые"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST49
+
+  - id: w6-05
+    date: 2026-10-29
+    slot: morning
+    rubric: keys
+    title: "Как этот блог чуть себя не выдал"
+    thesis: >
+      Ровное время публикации, одинаковая длина постов и любимые
+      обороты модели выдают генерацию быстрее, чем содержание.
+    keywords: [автогенерация, признаки, стиль]
+    image_hint: "гистограмма времени публикаций, идеально ровная"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST50
+
+  - id: w6-06
+    date: 2026-10-30
+    slot: morning
+    rubric: razbor
+    title: "Признание: этот блог вёл агент"
+    thesis: >
+      Шесть недель посты писал пайплайн, а человеческого в нём было
+      ровно столько, сколько нужно, чтобы результат остался читаемым.
+    keywords: [мета, признание, автоматизация]
+    image_hint: "схема пайплайна блога целиком"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST51
+
+  - id: w6-07
+    date: 2026-10-30
+    slot: evening
+    rubric: instrument
+    title: "Код пайплайна целиком"
+    thesis: >
+      Публикую DAG, промпты и yaml-план — воспроизвести можно
+      за вечер, если есть токен бота и ключ к модели.
+    keywords: [код, репозиторий]
+    image_hint: "структура репозитория"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST52
+
+  - id: w6-08
+    date: 2026-10-31
+    slot: morning
+    rubric: instrument
+    title: "Весь стек одним списком"
+    thesis: >
+      Все инструменты из шести недель в одном месте, с пометкой,
+      что из этого я реально держу в работе, а что попробовал ради поста.
+    keywords: [итоги, инструменты]
+    image_hint: "таблица инструментов"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST53
+
+  - id: w6-09
+    date: 2026-11-01
+    slot: morning
+    rubric: dnevnik
+    title: "Шесть недель: цифры и выводы"
+    thesis: >
+      Пишется вручную. Сколько постов вышло, сколько убито,
+      сколько раз пришлось вмешиваться, что бы сделал иначе.
+    keywords: [дневник, итоги]
+    image_hint: "итоговая статистика"
+    status: pending
+    draft_path:
+    published_at:
+    tg_message_id:
+    doc_prefix: POST54

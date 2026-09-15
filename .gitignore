@@ -1,0 +1,24 @@
+# Credentials & Tokens (Strict Security Isolation)
+.tg_bot_token*
+*.token
+*.secret
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Pipeline generated outputs and logs
+logs/*.jsonl
+logs/*.log
+out/drafts/*.md
+out/images/*.png
+out/images/*.jpg
+
+# OS & Editor
+.DS_Store
+.vscode/
+.idea/
+*.tmp
