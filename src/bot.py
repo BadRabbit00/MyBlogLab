@@ -59,6 +59,7 @@ def make_review_keyboard(post_id: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="🎨 Показать обложку", callback_data=f"card:{post_id}"),
+                InlineKeyboardButton(text="🔙 В меню", callback_data="menu:main"),
             ],
         ]
     )
@@ -73,7 +74,10 @@ def make_photo_keyboard(post_id: str) -> InlineKeyboardMarkup:
                     text="🚀 Опубликовать со сгенерированной карточкой",
                     callback_data=f"pubcard:{post_id}",
                 ),
-            ]
+            ],
+            [
+                InlineKeyboardButton(text="🔙 В главное меню", callback_data="menu:main"),
+            ],
         ]
     )
 
@@ -85,6 +89,44 @@ STATUS_ICONS: dict[str, str] = {
     "published": "🚀",
     "killed": "💀",
 }
+
+
+def render_main_menu() -> tuple[str, InlineKeyboardMarkup]:
+    """Render state engine dashboard with main inline navigation."""
+    stats = plan.get_stats()
+    content_plan = plan.load()
+    channel = content_plan.meta.get("channel", "не указан")
+
+    next_draft = plan.next_for("draft")
+    next_info = f"[{next_draft.id}] «{next_draft.title}»" if next_draft else "все посты обработаны"
+
+    text = (
+        "🎛 <b>Панель управления Blog-Agent</b>\n"
+        f"Канал: <code>{html.escape(str(channel))}</code>\n\n"
+        "📊 <b>Состояние контент-плана:</b>\n"
+        f"• Всего постов: <b>{stats.get('total', 0)}</b>\n"
+        f"• ⏳ Ожидают генерации: <b>{stats.get('pending', 0)}</b>\n"
+        f"• 📝 Черновики: <b>{stats.get('drafted', 0)}</b>\n"
+        f"• 📥 В очереди публикации: <b>{stats.get('queued', 0)}</b> (⚠️ ревью: {stats.get('needs_review', 0)})\n"
+        f"• 🚀 Опубликовано: <b>{stats.get('published', 0)}</b>\n\n"
+        "🎯 <b>Следующий в очереди:</b>\n"
+        f"<i>{html.escape(next_info)}</i>\n\n"
+        "Выбери действие:"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📑 Посты", callback_data="menu:posts"),
+                InlineKeyboardButton(text="⚡ Генерация", callback_data="menu:generate"),
+            ],
+            [
+                InlineKeyboardButton(text="📥 Очередь ревью", callback_data="menu:review"),
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="menu:refresh"),
+            ],
+        ]
+    )
+    return text, keyboard
 
 
 def render_list_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -146,22 +188,101 @@ def render_list_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
         if len(action_row) > 3:
             keyboard_rows.append(action_row[3:])
 
+    # Return to main menu button
+    keyboard_rows.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
     return "\n".join(lines), keyboard
 
 
 @router.message(CommandStart())
 async def cmd_start_handler(message: Message) -> None:
-    """Handle /start command."""
-    welcome_text = (
-        "🤖 <b>Blog-Agent Bot активен.</b>\n\n"
-        "Доступные команды:\n"
-        "• /list — постраничный просмотр контент-плана по 5 постов с кнопками (⬅️/➡️)\n"
-        "• /generate [ID] — сгенерировать следующий пост по плану (или конкретный ID, например <code>/generate w1-01</code>)\n"
-        "• /status — текущее состояние плана и очередей\n"
-        "• /review — список постов, ожидающих публикации\n"
+    """Handle /start command — open state dashboard."""
+    text, markup = render_main_menu()
+    await message.answer(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
+@router.callback_query(F.data.in_({"menu:main", "menu:refresh"}))
+async def callback_main_menu_handler(callback: CallbackQuery) -> None:
+    """Return to or refresh the main dashboard."""
+    text, markup = render_main_menu()
+    await callback.message.edit_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:posts")
+async def callback_menu_posts_handler(callback: CallbackQuery) -> None:
+    """Open paginated posts view from main menu."""
+    text, markup = render_list_page(0)
+    await callback.message.edit_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:generate")
+async def callback_menu_generate_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    """Trigger generation of next pending post from main menu."""
+    post = plan.next_for("draft") or plan.next_for("critique")
+    if not post:
+        await callback.answer("❌ Нет доступных постов для генерации в плане", show_alert=True)
+        return
+
+    await callback.answer(f"Запускаю генерацию {post.id}...")
+    status_msg = await callback.message.answer(
+        f"⏳ <b>Генерирую черновик</b>: [{post.id}] «{html.escape(post.title)}»...\n"
+        f"<i>Считываю историю канала и статьи из ./docs/{post.doc_prefix or ''}*...</i>",
+        parse_mode=ParseMode.HTML,
     )
-    await message.answer(welcome_text, parse_mode=ParseMode.HTML)
+
+    loop = asyncio.get_running_loop()
+    draft_text, lint_res = await loop.run_in_executor(
+        None, generate_post_content, post, None, None, 2
+    )
+
+    badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
+
+    response_text = (
+        f"📝 <b>Черновик готов: #{post.id.upper()}</b>\n"
+        f"<b>Тема:</b> {html.escape(post.title)}\n"
+        f"<b>Рубрика:</b> {post.rubric} | <b>Символов:</b> {len(draft_text)}\n"
+        f"<b>Статус:</b> {badge}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{html.escape(draft_text)}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Одобрить или отправить на доработку с комментарием?"
+    )
+
+    await status_msg.delete()
+    await callback.message.answer(
+        response_text,
+        reply_markup=make_review_keyboard(post.id),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "menu:review")
+async def callback_menu_review_handler(callback: CallbackQuery) -> None:
+    """Show queued posts awaiting publication."""
+    queued_posts = plan.all_for("publish")
+    if not queued_posts:
+        empty_text = "📥 <b>Очередь публикации пуста.</b>\n\nСгенерируй и одобри посты, чтобы они появились здесь."
+        empty_markup = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")]]
+        )
+        await callback.message.edit_text(empty_text, reply_markup=empty_markup, parse_mode=ParseMode.HTML)
+        await callback.answer()
+        return
+
+    await callback.answer()
+    for post in queued_posts[:3]:
+        draft_file = BASE_DIR / (post.draft_path or f"out/drafts/{post.id}.md")
+        content = draft_file.read_text(encoding="utf-8") if draft_file.exists() else "файл не найден"
+        review_flag = "⚠️ ТРЕБУЕТ ВНИМАНИЯ" if post.needs_review else "✅ ГОТОВ"
+        msg = (
+            f"<b>#{post.id.upper()}</b> | {post.rubric.upper()} | {review_flag}\n"
+            f"<b>{html.escape(post.title)}</b>\n\n"
+            f"{html.escape(content)}"
+        )
+        await callback.message.answer(msg, reply_markup=make_review_keyboard(post.id), parse_mode=ParseMode.HTML)
 
 
 @router.message(Command("list"))
