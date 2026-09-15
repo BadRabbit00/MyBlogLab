@@ -78,17 +78,155 @@ def make_photo_keyboard(post_id: str) -> InlineKeyboardMarkup:
     )
 
 
+STATUS_ICONS: dict[str, str] = {
+    "pending": "⏳",
+    "drafted": "📝",
+    "queued": "📥",
+    "published": "🚀",
+    "killed": "💀",
+}
+
+
+def render_list_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Render a 5-item paginated view of content-plan.yaml with navigation buttons."""
+    content_plan = plan.load()
+    posts = content_plan.posts
+    total_posts = len(posts)
+    page_size = 5
+    total_pages = max(1, (total_posts + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total_posts)
+    current_posts = posts[start_idx:end_idx]
+
+    lines = [
+        f"📋 <b>Контент-план</b> (Стр. {page + 1} из {total_pages})",
+        f"Всего постов: {total_posts}\n",
+    ]
+
+    for p in current_posts:
+        icon = STATUS_ICONS.get(p.status, "❓")
+        prefix_str = f" <code>[{p.doc_prefix}]</code>" if p.doc_prefix else ""
+        lines.append(
+            f"{icon} <b>#{p.id.upper()}</b> | {p.date} ({p.slot}) | <i>{p.rubric}</i>{prefix_str}\n"
+            f"<b>{html.escape(p.title)}</b>\n"
+            f"Тезис: {html.escape(p.thesis[:100])}{'...' if len(p.thesis) > 100 else ''}\n"
+            f"Статус: <code>{p.status}</code>" + (" (⚠️ needs review)" if p.needs_review else "") + "\n"
+        )
+
+    # Navigation buttons: Prev / Page info / Next
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"list_page:{page - 1}"))
+    else:
+        nav_row.append(InlineKeyboardButton(text="⏹️", callback_data="noop"))
+
+    nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"list_page:{page + 1}"))
+    else:
+        nav_row.append(InlineKeyboardButton(text="⏹️", callback_data="noop"))
+
+    # Action row: quick generate triggers for non-diary posts on this page
+    action_row: list[InlineKeyboardButton] = []
+    for p in current_posts:
+        if p.rubric != "dnevnik":
+            action_row.append(
+                InlineKeyboardButton(
+                    text=f"⚡ {p.id}",
+                    callback_data=f"gen_req:{p.id}",
+                )
+            )
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = [nav_row]
+    if action_row:
+        keyboard_rows.append(action_row[:3])
+        if len(action_row) > 3:
+            keyboard_rows.append(action_row[3:])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+    return "\n".join(lines), keyboard
+
+
 @router.message(CommandStart())
 async def cmd_start_handler(message: Message) -> None:
     """Handle /start command."""
     welcome_text = (
         "🤖 <b>Blog-Agent Bot активен.</b>\n\n"
         "Доступные команды:\n"
+        "• /list — постраничный просмотр контент-плана по 5 постов с кнопками (⬅️/➡️)\n"
         "• /generate [ID] — сгенерировать следующий пост по плану (или конкретный ID, например <code>/generate w1-01</code>)\n"
         "• /status — текущее состояние плана и очередей\n"
         "• /review — список постов, ожидающих публикации\n"
     )
     await message.answer(welcome_text, parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("list"))
+async def cmd_list_handler(message: Message) -> None:
+    """Show paginated content plan."""
+    text, markup = render_list_page(0)
+    await message.answer(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+
+
+@router.callback_query(F.data.startswith("list_page:"))
+async def callback_list_page_handler(callback: CallbackQuery) -> None:
+    """Handle pagination page change."""
+    page_str = callback.data.split(":", 1)[1]
+    page = int(page_str)
+    text, markup = render_list_page(page)
+    await callback.message.edit_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def callback_noop_handler(callback: CallbackQuery) -> None:
+    """No-op callback for informational buttons."""
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gen_req:"))
+async def callback_gen_req_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    """Handle quick generation request from /list buttons."""
+    target_id = callback.data.split(":", 1)[1]
+    post = plan.get_post(target_id)
+    if not post:
+        await callback.answer("❌ Пост не найден", show_alert=True)
+        return
+
+    await callback.answer(f"Генерирую {target_id}...")
+    status_msg = await callback.message.answer(
+        f"⏳ <b>Генерирую черновик</b>: [{post.id}] «{html.escape(post.title)}»...\n"
+        f"<i>Считываю историю канала и статьи из ./docs/{post.doc_prefix or ''}*...</i>",
+        parse_mode=ParseMode.HTML,
+    )
+
+    loop = asyncio.get_running_loop()
+    draft_text, lint_res = await loop.run_in_executor(
+        None, generate_post_content, post, None, None, 2
+    )
+
+    badge = "✅ Линтер пройден" if lint_res.passed else f"⚠️ Замечания ({'; '.join(lint_res.errors)})"
+
+    response_text = (
+        f"📝 <b>Черновик готов: #{post.id.upper()}</b>\n"
+        f"<b>Тема:</b> {html.escape(post.title)}\n"
+        f"<b>Рубрика:</b> {post.rubric} | <b>Символов:</b> {len(draft_text)}\n"
+        f"<b>Статус:</b> {badge}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{html.escape(draft_text)}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Одобрить или отправить на доработку с комментарием?"
+    )
+
+    await status_msg.delete()
+    await callback.message.answer(
+        response_text,
+        reply_markup=make_review_keyboard(post.id),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("status"))
